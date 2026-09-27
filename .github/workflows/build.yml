@@ -1,39 +1,760 @@
-name: Build JSON
+name: Build Parsian APK
 
 on:
-  push:
-    branches:
-      - main
-  schedule:
-    # * is a special character in YAML so you have to quote this string
-    - cron:  '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install PyGithub
-    - name: Run script and commit changes
-      run: |
-        python release.py
-        echo "Setting up git credentials..."
-        git remote set-url origin https://x-access-token:"$GITHUB_TOKEN"@github.com/"$GITHUB_REPOSITORY".git
-        git config --global user.email "actions@github.com"
-        git config --global user.name "actions"
-        echo "Git credentials configured."
+      - name: Checkout
+        uses: actions/checkout@v4
 
-        git checkout main
-        git add .
-        git commit -m "Automatic update of data" && git push --set-upstream origin main || true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Create Android project
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p app/src/main/java/com/parsian/boiler
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/assets
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "Parsian"
+          include(":app")
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+          }
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.parsian.boiler'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.parsian.boiler'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 2
+                  versionName '2.0'
+              }
+
+              buildTypes {
+                  debug {
+                      debuggable true
+                  }
+
+                  release {
+                      minifyEnabled false
+                      shrinkResources false
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET"/>
+
+              <application
+                  android:allowBackup="true"
+                  android:label="پارسیان"
+                  android:theme="@style/AppTheme"
+                  android:usesCleartextTraffic="true">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+
+                  </activity>
+
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme"
+                  parent="android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:windowLightStatusBar">false</item>
+                  <item name="android:statusBarColor">#075985</item>
+                  <item name="android:navigationBarColor">#FFFFFF</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > app/src/main/java/com/parsian/boiler/MainActivity.java <<'EOF'
+          package com.parsian.boiler;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          public class MainActivity extends Activity {
+
+              private WebView web;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  web = new WebView(this);
+
+                  WebSettings settings = web.getSettings();
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setAllowFileAccess(true);
+                  settings.setAllowContentAccess(true);
+
+                  web.setWebViewClient(new WebViewClient());
+                  web.loadUrl("file:///android_asset/index.html");
+
+                  setContentView(web);
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (web != null && web.canGoBack()) {
+                      web.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/assets/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="fa" dir="rtl">
+          <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>پارسیان</title>
+
+          <style>
+          *{box-sizing:border-box}
+          body{
+            margin:0;
+            background:#f1f5f9;
+            color:#0f172a;
+            font-family:Tahoma,Arial,sans-serif
+          }
+          header{
+            background:linear-gradient(135deg,#075985,#0284c7);
+            color:white;
+            padding:22px 16px;
+            border-radius:0 0 24px 24px
+          }
+          header h1{margin:0;font-size:27px}
+          header p{margin:7px 0 0;opacity:.9}
+          .container{max-width:720px;margin:auto;padding:14px}
+          .card{
+            background:white;
+            border-radius:18px;
+            padding:16px;
+            margin-bottom:14px;
+            box-shadow:0 3px 14px #00000012
+          }
+          .grid{
+            display:grid;
+            grid-template-columns:1fr 1fr;
+            gap:10px
+          }
+          .service{
+            background:#fff;
+            border:2px solid #e2e8f0;
+            border-radius:16px;
+            padding:18px 8px;
+            text-align:center;
+            font-weight:bold
+          }
+          .service.active{
+            border-color:#0284c7;
+            background:#eff6ff
+          }
+          .icon{display:block;font-size:34px;margin-bottom:7px}
+          label{
+            display:block;
+            margin-top:10px;
+            font-size:13px;
+            color:#475569
+          }
+          input,textarea,select{
+            width:100%;
+            margin-top:5px;
+            padding:13px;
+            border:1px solid #cbd5e1;
+            border-radius:12px;
+            font-family:inherit;
+            font-size:15px;
+            background:#fff
+          }
+          textarea{min-height:75px}
+          button{
+            width:100%;
+            border:0;
+            border-radius:12px;
+            padding:14px;
+            margin-top:10px;
+            font-family:inherit;
+            font-size:15px;
+            font-weight:bold
+          }
+          .primary{background:#0284c7;color:#fff}
+          .secondary{background:#e0f2fe;color:#075985}
+          .green{background:#16a34a;color:white}
+          .gray{background:#e2e8f0;color:#334155}
+          .danger{background:#fee2e2;color:#991b1b}
+          .row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+          .money{
+            display:flex;
+            justify-content:space-between;
+            border-bottom:1px solid #e2e8f0;
+            padding:9px 0
+          }
+          .final{
+            background:#fef3c7;
+            border-radius:14px;
+            padding:15px;
+            margin-top:12px;
+            display:flex;
+            justify-content:space-between;
+            font-size:19px;
+            font-weight:bold
+          }
+          .hidden{display:none}
+          .invoice{
+            background:#fff;
+            padding:18px;
+            border-radius:8px;
+            line-height:1.9
+          }
+          .invoiceHead{
+            text-align:center;
+            border-bottom:2px solid #075985;
+            padding-bottom:10px
+          }
+          table{
+            width:100%;
+            border-collapse:collapse;
+            margin-top:12px;
+            font-size:12px
+          }
+          th,td{
+            border:1px solid #cbd5e1;
+            padding:7px;
+            text-align:right
+          }
+          th{background:#e0f2fe}
+          .success{
+            text-align:center;
+            background:#dcfce7;
+            color:#166534;
+            padding:14px;
+            border-radius:14px;
+            margin-bottom:12px
+          }
+          .small{font-size:12px;color:#64748b}
+          @media print{
+            body *{visibility:hidden}
+            #printArea,#printArea *{visibility:visible}
+            #printArea{
+              position:absolute;
+              left:0;
+              top:0;
+              width:100%
+            }
+          }
+          </style>
+          </head>
+
+          <body>
+
+          <header>
+            <h1>🔧 پارسیان</h1>
+            <p>مدیریت تأسیسات، مشتری، فاکتور و رسید</p>
+          </header>
+
+          <main class="container">
+
+          <section id="home">
+
+            <div class="card">
+              <h3>نوع خدمت</h3>
+
+              <div class="grid">
+                <div class="service active" onclick="choose('پکیج',this)">
+                  <span class="icon">🔥</span>پکیج
+                </div>
+
+                <div class="service" onclick="choose('پمپ آب',this)">
+                  <span class="icon">💧</span>پمپ آب
+                </div>
+
+                <div class="service" onclick="choose('آب تصفیه',this)">
+                  <span class="icon">🚰</span>آب تصفیه
+                </div>
+
+                <div class="service" onclick="choose('آبگرمکن',this)">
+                  <span class="icon">♨️</span>آبگرمکن
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>👤 اطلاعات مشتری</h3>
+
+              <label>نام مشتری</label>
+              <input id="customer" placeholder="نام و نام خانوادگی">
+
+              <label>شماره تماس</label>
+              <input id="phone" type="tel" placeholder="0912...">
+
+              <label>آدرس</label>
+              <textarea id="address" placeholder="آدرس مشتری"></textarea>
+
+              <div class="row">
+                <div>
+                  <label>برند</label>
+                  <input id="brand" placeholder="برند">
+                </div>
+                <div>
+                  <label>مدل</label>
+                  <input id="model" placeholder="مدل">
+                </div>
+              </div>
+
+              <label>شماره سریال</label>
+              <input id="serial">
+
+              <label>شرح خدمات</label>
+              <textarea id="serviceDesc"
+                placeholder="شرح تعمیر، سرویس، نصب یا تعویض قطعه"></textarea>
+            </div>
+
+            <div class="card">
+              <h3>💰 مبالغ</h3>
+
+              <div class="row">
+                <div>
+                  <label>اجرت</label>
+                  <input id="labor" type="number" value="0" oninput="calc()">
+                </div>
+                <div>
+                  <label>قطعات</label>
+                  <input id="parts" type="number" value="0" oninput="calc()">
+                </div>
+              </div>
+
+              <div class="row">
+                <div>
+                  <label>ایاب و ذهاب</label>
+                  <input id="travel" type="number" value="0" oninput="calc()">
+                </div>
+                <div>
+                  <label>تخفیف</label>
+                  <input id="discount" type="number" value="0" oninput="calc()">
+                </div>
+              </div>
+
+              <div class="money">
+                <span>جمع اولیه</span>
+                <b id="subtotal">۰ تومان</b>
+              </div>
+
+              <div class="final">
+                <span>مبلغ نهایی</span>
+                <span id="total">۰ تومان</span>
+              </div>
+
+              <label>مبلغ پرداختی</label>
+              <input id="paid" type="number" value="0" oninput="calc()">
+
+              <div class="money">
+                <span>مانده حساب</span>
+                <b id="balance">۰ تومان</b>
+              </div>
+
+              <label>روش پرداخت</label>
+              <select id="payment">
+                <option>نقدی</option>
+                <option>کارت</option>
+                <option>انتقال بانکی</option>
+                <option>چک</option>
+                <option>پرداخت نشده</option>
+              </select>
+
+              <button class="primary" onclick="makeInvoice()">
+                🧾 صدور فاکتور
+              </button>
+
+              <button class="green" onclick="makeReceipt()">
+                🧾 صدور رسید
+              </button>
+
+              <button class="secondary" onclick="saveCustomer()">
+                💾 ذخیره اطلاعات مشتری
+              </button>
+            </div>
+
+            <div class="card">
+              <h3>👥 مشتریان ذخیره‌شده</h3>
+              <div id="customers"></div>
+            </div>
+
+          </section>
+
+          <section id="document" class="hidden">
+
+            <div class="success">
+              سند پارسیان آماده شد
+            </div>
+
+            <div id="printArea"></div>
+
+            <button class="primary" onclick="window.print()">
+              📄 چاپ / ذخیره PDF
+            </button>
+
+            <button class="secondary" onclick="shareDocument()">
+              📤 اشتراک‌گذاری
+            </button>
+
+            <button class="gray" onclick="backHome()">
+              بازگشت
+            </button>
+
+          </section>
+
+          </main>
+
+          <script>
+          let selected="پکیج";
+          let invoiceNo="PR-"+Date.now();
+
+          function choose(type,el){
+            selected=type;
+            document.querySelectorAll(".service")
+              .forEach(x=>x.classList.remove("active"));
+            el.classList.add("active");
+          }
+
+          function num(id){
+            return Number(document.getElementById(id).value||0);
+          }
+
+          function money(n){
+            return Number(n).toLocaleString("fa-IR")+" تومان";
+          }
+
+          function calc(){
+            const subtotal=num("labor")+num("parts")+num("travel");
+            const total=Math.max(0,subtotal-num("discount"));
+            const balance=Math.max(0,total-num("paid"));
+
+            document.getElementById("subtotal").innerText=money(subtotal);
+            document.getElementById("total").innerText=money(total);
+            document.getElementById("balance").innerText=money(balance);
+          }
+
+          function data(){
+            const total=Math.max(
+              0,
+              num("labor")+num("parts")+num("travel")-num("discount")
+            );
+
+            return {
+              customer:document.getElementById("customer").value||"بدون نام",
+              phone:document.getElementById("phone").value||"-",
+              address:document.getElementById("address").value||"-",
+              brand:document.getElementById("brand").value||"-",
+              model:document.getElementById("model").value||"-",
+              serial:document.getElementById("serial").value||"-",
+              desc:document.getElementById("serviceDesc").value||"-",
+              labor:num("labor"),
+              parts:num("parts"),
+              travel:num("travel"),
+              discount:num("discount"),
+              paid:num("paid"),
+              total:total,
+              balance:Math.max(0,total-num("paid")),
+              payment:document.getElementById("payment").value
+            };
+          }
+
+          function makeInvoice(){
+            calc();
+            const d=data();
+
+            document.getElementById("printArea").innerHTML=`
+            <div class="invoice">
+              <div class="invoiceHead">
+                <h2>پارسیان تأسیسات</h2>
+                <b>فاکتور مشتری</b>
+              </div>
+
+              <p>
+                <b>شماره فاکتور:</b> ${invoiceNo}<br>
+                <b>تاریخ:</b> ${new Date().toLocaleDateString("fa-IR")}<br>
+                <b>نوع خدمت:</b> ${selected}
+              </p>
+
+              <p>
+                <b>مشتری:</b> ${d.customer}<br>
+                <b>تلفن:</b> ${d.phone}<br>
+                <b>آدرس:</b> ${d.address}<br>
+                <b>برند:</b> ${d.brand}
+                &nbsp; <b>مدل:</b> ${d.model}<br>
+                <b>سریال:</b> ${d.serial}
+              </p>
+
+              <table>
+                <tr><th>شرح</th><th>مبلغ</th></tr>
+                <tr><td>اجرت</td><td>${money(d.labor)}</td></tr>
+                <tr><td>قطعات</td><td>${money(d.parts)}</td></tr>
+                <tr><td>ایاب و ذهاب</td><td>${money(d.travel)}</td></tr>
+                <tr><td>تخفیف</td><td>${money(d.discount)}</td></tr>
+                <tr><th>مبلغ نهایی</th><th>${money(d.total)}</th></tr>
+              </table>
+
+              <p>
+                <b>شرح خدمات:</b><br>${d.desc}
+              </p>
+
+              <p>
+                <b>پرداختی:</b> ${money(d.paid)}<br>
+                <b>مانده:</b> ${money(d.balance)}<br>
+                <b>روش پرداخت:</b> ${d.payment}
+              </p>
+
+              <hr>
+              <p style="text-align:center">
+                با تشکر از اعتماد شما به پارسیان
+              </p>
+            </div>`;
+
+            showDocument();
+          }
+
+          function makeReceipt(){
+            calc();
+            const d=data();
+
+            document.getElementById("printArea").innerHTML=`
+            <div class="invoice">
+              <div class="invoiceHead">
+                <h2>پارسیان تأسیسات</h2>
+                <h3>رسید دریافت وجه</h3>
+              </div>
+
+              <p>
+                دریافت شد از: <b>${d.customer}</b><br>
+                بابت: ${selected}<br>
+                شماره فاکتور: ${invoiceNo}<br>
+                روش پرداخت: ${d.payment}
+              </p>
+
+              <div class="final">
+                <span>مبلغ دریافت‌شده</span>
+                <span>${money(d.paid)}</span>
+              </div>
+
+              <p>
+                مبلغ فاکتور: ${money(d.total)}<br>
+                مانده حساب: ${money(d.balance)}
+              </p>
+
+              <hr>
+              <p style="text-align:center">
+                رسید صادر شده توسط سامانه پارسیان
+              </p>
+            </div>`;
+
+            showDocument();
+          }
+
+          function showDocument(){
+            document.getElementById("home").classList.add("hidden");
+            document.getElementById("document").classList.remove("hidden");
+          }
+
+          function backHome(){
+            document.getElementById("document").classList.add("hidden");
+            document.getElementById("home").classList.remove("hidden");
+            invoiceNo="PR-"+Date.now();
+          }
+
+          async function shareDocument(){
+            const d=data();
+            const text=
+              "فاکتور پارسیان\n"+
+              "شماره: "+invoiceNo+"\n"+
+              "مشتری: "+d.customer+"\n"+
+              "دستگاه: "+selected+"\n"+
+              "مبلغ: "+money(d.total);
+
+            if(navigator.share){
+              try{
+                await navigator.share({
+                  title:"فاکتور پارسیان",
+                  text:text
+                });
+              }catch(e){}
+            }else{
+              alert(text);
+            }
+          }
+
+          function saveCustomer(){
+            const d=data();
+            const list=JSON.parse(
+              localStorage.getItem("parsianCustomers")||"[]"
+            );
+
+            list.push({
+              customer:d.customer,
+              phone:d.phone,
+              address:d.address,
+              brand:d.brand,
+              model:d.model,
+              serial:d.serial,
+              type:selected
+            });
+
+            localStorage.setItem(
+              "parsianCustomers",
+              JSON.stringify(list)
+            );
+
+            renderCustomers();
+            alert("اطلاعات مشتری ذخیره شد");
+          }
+
+          function loadCustomer(i){
+            const list=JSON.parse(
+              localStorage.getItem("parsianCustomers")||"[]"
+            );
+
+            const d=list[i];
+            if(!d)return;
+
+            document.getElementById("customer").value=d.customer||"";
+            document.getElementById("phone").value=d.phone||"";
+            document.getElementById("address").value=d.address||"";
+            document.getElementById("brand").value=d.brand||"";
+            document.getElementById("model").value=d.model||"";
+            document.getElementById("serial").value=d.serial||"";
+          }
+
+          function deleteCustomer(i){
+            const list=JSON.parse(
+              localStorage.getItem("parsianCustomers")||"[]"
+            );
+
+            list.splice(i,1);
+
+            localStorage.setItem(
+              "parsianCustomers",
+              JSON.stringify(list)
+            );
+
+            renderCustomers();
+          }
+
+          function renderCustomers(){
+            const box=document.getElementById("customers");
+
+            const list=JSON.parse(
+              localStorage.getItem("parsianCustomers")||"[]"
+            );
+
+            if(!list.length){
+              box.innerHTML=
+                '<div class="small">هنوز مشتری ذخیره نشده است.</div>';
+              return;
+            }
+
+            box.innerHTML=list.map((x,i)=>`
+              <div class="card"
+                   style="margin:8px 0;border:1px solid #e2e8f0">
+
+                <b>${x.customer}</b>
+
+                <div class="small">
+                  ${x.phone} | ${x.type} | ${x.brand} ${x.model}
+                </div>
+
+                <button class="secondary"
+                        onclick="loadCustomer(${i})">
+                  استفاده از این مشتری
+                </button>
+
+                <button class="danger"
+                        onclick="deleteCustomer(${i})">
+                  حذف
+                </button>
+              </div>
+            `).join("");
+          }
+
+          calc();
+          renderCustomers();
+          </script>
+
+          </body>
+          </html>
+          EOF
+
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Parsian-APK-v2
+          path: app/build/outputs/apk/debug/app-debug.apk
