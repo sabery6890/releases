@@ -1,39 +1,151 @@
-name: Build JSON
+name: ساخت APK پارسیان
 
 on:
-  push:
-    branches:
-      - main
-  schedule:
-    # * is a special character in YAML so you have to quote this string
-    - cron:  '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install PyGithub
-    - name: Run script and commit changes
-      run: |
-        python release.py
-        echo "Setting up git credentials..."
-        git remote set-url origin https://x-access-token:"$GITHUB_TOKEN"@github.com/"$GITHUB_REPOSITORY".git
-        git config --global user.email "actions@github.com"
-        git config --global user.name "actions"
-        echo "Git credentials configured."
 
-        git checkout main
-        git add .
-        git commit -m "Automatic update of data" && git push --set-upstream origin main || true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 1 - دریافت پروژه
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2 - نصب Java
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # 3 - نصب Gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      # 4 - ساخت پوشه‌های پروژه
+      - name: Create Android Project
+        shell: bash
+        run: |
+          mkdir -p app/src/main/java/com/parsian/services
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/mipmap-hdpi
+          mkdir -p app/src/main/assets
+
+      # 5 - settings.gradle
+      - name: Create settings.gradle
+        shell: bash
+        run: |
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "ParsianServices"
+          include(":app")
+          EOF
+
+      # 6 - gradle.properties
+      - name: Create gradle.properties
+        shell: bash
+        run: |
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          EOF
+
+      # 7 - build.gradle اصلی
+      - name: Create root build.gradle
+        shell: bash
+        run: |
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+          }
+          EOF
+
+      # 8 - build.gradle اپلیکیشن
+      - name: Create app/build.gradle
+        shell: bash
+        run: |
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.parsian.services'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.parsian.services'
+                  minSdk 24
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0'
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+          }
+          EOF
+
+      # 9 - AndroidManifest
+      - name: Create AndroidManifest.xml
+        shell: bash
+        run: |
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <application
+                  android:allowBackup="true"
+                  android:label="پارسیان"
+                  android:supportsRtl="true"
+                  android:theme="@style/AppTheme">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+
+                  </activity>
+
+              </application>
+
+          </manifest>
+          EOF
+
+      # 10 - strings.xml
+      - name: Create strings.xml
+        shell: bash
+        run: |
+          cat > app/src/main/res/values/strings.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">پارسیان</
